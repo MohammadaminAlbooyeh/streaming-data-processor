@@ -1,0 +1,122 @@
+version: "3.9"
+
+services:
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.5.0
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+
+  kafka:
+    image: confluentinc/cp-kafka:7.5.0
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  ingestion:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+    command: uvicorn ingestion.main:app --host 0.0.0.0 --port 8000
+    depends_on:
+      - kafka
+      - redis
+
+  query-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+      STREAM_DATABASE_URL: sqlite:///./streaming.db
+    command: uvicorn api.main:app --host 0.0.0.0 --port 8001
+    depends_on:
+      - kafka
+      - redis
+
+  aggregation-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+    command: python -m consumers.aggregation_consumer
+    depends_on:
+      - kafka
+      - redis
+
+  enrichment-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+    command: python -m consumers.enrichment_consumer
+    depends_on:
+      - kafka
+      - redis
+
+  fraud-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+    command: python -m consumers.fraud_consumer
+    depends_on:
+      - kafka
+      - redis
+
+  storage-consumer:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      STREAM_KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      STREAM_REDIS_HOST: redis
+      STREAM_DATABASE_URL: sqlite:///./streaming.db
+    command: python -m consumers.storage_consumer
+    depends_on:
+      - kafka
+      - redis
+
+  prometheus:
+    image: prom/prometheus:v2.48.0
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+
+  grafana:
+    image: grafana/grafana:10.2.0
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - ./monitoring/grafana_dashboards:/var/lib/grafana/dashboards
