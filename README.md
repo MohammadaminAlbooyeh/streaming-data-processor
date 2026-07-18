@@ -79,7 +79,33 @@ Valid event types: `transaction`, `click`, `pageview`, `login`, `logout`, `purch
 ## Testing
 
 ```bash
+# Run tests
 pytest -v
+
+# Run with coverage
+pytest --cov=core --cov=ingestion --cov=consumers --cov=api --cov=models --cov-report=term-missing
+
+# Use Makefile
+make test
+make test-cov
+```
+
+## Project Structure
+
+```
+streaming-data-processor/
+├── api/              # Query API (FastAPI, routes, WebSocket)
+├── consumers/        # Kafka consumers (aggregation, enrichment, fraud, storage)
+├── core/             # Core services (Kafka, Redis, dedup, windowing, DLQ)
+├── examples/         # Usage examples and traffic simulation
+├── ingestion/        # Ingestion API (FastAPI, schemas, validators, producer)
+├── models/           # Data models (Pydantic, SQLAlchemy ORM)
+├── monitoring/       # Prometheus config and Grafana dashboards
+├── tests/            # 67+ test suite (pytest)
+├── docker-compose.yml
+├── Dockerfile
+├── Makefile
+└── requirements.txt
 ```
 
 ## Docker Compose (full stack)

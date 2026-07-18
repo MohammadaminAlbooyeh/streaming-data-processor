@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
+from fastapi.responses import JSONResponse
 from prometheus_client import make_asgi_app, Counter, Histogram
 
 from core.config import settings
@@ -39,7 +40,10 @@ async def create_event(incoming: IncomingEvent):
     try:
         event = producer.publish(incoming)
         events_validated.inc()
-        return {"status": "accepted", "event_id": event.id}
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={"status": "accepted", "event_id": event.id},
+        )
     except ValueError as e:
         events_rejected.inc()
         raise HTTPException(status_code=409, detail=str(e))

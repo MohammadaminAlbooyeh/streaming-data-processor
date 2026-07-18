@@ -4,7 +4,7 @@ from core.config import settings
 from core.dead_letter_handler import DeadLetterHandler
 from core.kafka_client import KafkaClient
 from consumers.base_consumer import BaseConsumer
-from models.database import SessionLocal, EventRecord, AggregateRecord, FraudAlertRecord, init_db
+from models.database import SessionLocal, EventRecord, FraudAlertRecord, init_db
 
 
 class StorageConsumer(BaseConsumer):
@@ -13,10 +13,23 @@ class StorageConsumer(BaseConsumer):
             topic=settings.raw_events_topic,
             group_id="storage-consumer",
         )
-        self._dlq = DeadLetterHandler(KafkaClient())
+        self._kafka = KafkaClient()
+        self._dlq = DeadLetterHandler(self._kafka)
         init_db()
 
     def process(self, message: dict) -> None:
+        if "rule" in message and "severity" in message:
+            self._store_fraud_alert(message)
+        else:
+            self._store_event(message)
+
+    def run(self) -> None:
+        self._kafka.consume_multiple([
+            (settings.raw_events_topic, "storage-consumer", self._handle_with_errors),
+            (settings.fraud_alerts_topic, "storage-consumer", self._handle_with_errors),
+        ])
+
+    def _store_event(self, message: dict) -> None:
         db = SessionLocal()
         try:
             record = EventRecord(
@@ -34,6 +47,27 @@ class StorageConsumer(BaseConsumer):
             db.rollback()
             self._dlq.send(message, str(e))
             print(f"StorageConsumer: Error storing event: {e}")
+        finally:
+            db.close()
+
+    def _store_fraud_alert(self, message: dict) -> None:
+        db = SessionLocal()
+        try:
+            record = FraudAlertRecord(
+                id=message.get("id", ""),
+                event_id=message.get("event_id", ""),
+                rule=message.get("rule", ""),
+                severity=message.get("severity", ""),
+                details=message.get("details", {}),
+                created_at=self._parse_timestamp(message.get("created_at")),
+            )
+            db.add(record)
+            db.commit()
+            print(f"StorageConsumer: Stored fraud alert {record.id}")
+        except Exception as e:
+            db.rollback()
+            self._dlq.send(message, str(e))
+            print(f"StorageConsumer: Error storing fraud alert: {e}")
         finally:
             db.close()
 

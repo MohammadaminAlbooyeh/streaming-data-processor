@@ -51,6 +51,42 @@ class KafkaClient:
         finally:
             consumer.close()
 
+    def consume_multiple(
+        self,
+        topic_handlers: list[tuple[str, str, Callable[[dict], None]]],
+        timeout_ms: int = 1000,
+    ) -> None:
+        """Consume from multiple topics, routing each message to the appropriate handler.
+
+        Args:
+            topic_handlers: List of (topic, group_id, handler) tuples.
+            timeout_ms: Consumer poll timeout in milliseconds.
+        """
+        topics = [th[0] for th in topic_handlers]
+        group_id = topic_handlers[0][1] if topic_handlers else "multi-consumer"
+
+        consumer = KafkaConsumer(
+            *topics,
+            bootstrap_servers=self.bootstrap_servers,
+            group_id=group_id,
+            value_deserializer=lambda v: json.loads(v.decode("utf-8")),
+            key_deserializer=lambda k: k.decode("utf-8") if k else None,
+            auto_offset_reset="earliest",
+            enable_auto_commit=True,
+        )
+        handler_map = {th[0]: th[2] for th in topic_handlers}
+
+        try:
+            for message in consumer:
+                handler = handler_map.get(message.topic)
+                if handler:
+                    handler(message.value)
+        except KeyboardInterrupt:
+            pass
+        finally:
+            consumer.close()
+
     def close(self) -> None:
         if self._producer is not None:
             self._producer.close()
+
