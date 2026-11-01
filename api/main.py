@@ -1,3 +1,4 @@
+import asyncio
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
@@ -5,13 +6,19 @@ from prometheus_client import make_asgi_app
 
 from models.database import init_db
 from api.routes import router
-from api.websocket import websocket_endpoint
+from api.websocket import websocket_endpoint, kafka_event_forwarder
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    forwarder_task = asyncio.create_task(kafka_event_forwarder())
     yield
+    forwarder_task.cancel()
+    try:
+        await forwarder_task
+    except asyncio.CancelledError:
+        pass
 
 
 app = FastAPI(title="Streaming Data Processor - Query API", lifespan=lifespan)

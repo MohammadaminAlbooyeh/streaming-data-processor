@@ -1,5 +1,6 @@
 import pytest
 from datetime import datetime
+from unittest.mock import Mock
 
 from ingestion.schemas import IncomingEvent
 from ingestion.validators import validate_event, VALID_EVENT_TYPES
@@ -54,3 +55,40 @@ class TestValidators:
             event = IncomingEvent(event_type=et, source="test-source")
             errors = validate_event(event)
             assert errors == [], f"Failed for event_type: {et}"
+
+    def test_empty_event_type_returns_error(self):
+        event = IncomingEvent(event_type="", source="web")
+        errors = validate_event(event)
+        assert any(field == "event_type" for field, _ in errors)
+
+    def test_non_dict_data_returns_error(self):
+        event = Mock(spec=IncomingEvent)
+        event.event_type = "click"
+        event.source = "web"
+        event.data = 123
+        event.metadata = {}
+        errors = validate_event(event)
+        assert any(field == "data" for field, _ in errors)
+
+    def test_non_dict_metadata_returns_error(self):
+        event = Mock(spec=IncomingEvent)
+        event.event_type = "click"
+        event.source = "web"
+        event.data = {}
+        event.metadata = "invalid"
+        errors = validate_event(event)
+        assert any(field == "metadata" for field, _ in errors)
+
+    def test_empty_event_type_with_data_errors(self):
+        event = Mock(spec=IncomingEvent)
+        event.event_type = ""
+        event.source = "web"
+        event.data = {"key": "val"}
+        event.metadata = {}
+        errors = validate_event(event)
+        assert any(field == "event_type" for field, _ in errors)
+
+    def test_empty_source_still_validates_pattern(self):
+        event = IncomingEvent(event_type="click", source="   ")
+        errors = validate_event(event)
+        assert any(field == "source" for field, _ in errors)

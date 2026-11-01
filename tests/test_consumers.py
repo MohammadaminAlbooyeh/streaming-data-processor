@@ -1,11 +1,12 @@
 """Tests for consumers: base, enrichment, storage, and aggregation."""
 
 import pytest
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, ANY
 
 from consumers.base_consumer import BaseConsumer
 from consumers.enrichment_consumer import EnrichmentConsumer
 from consumers.storage_consumer import StorageConsumer
+from consumers.aggregation_consumer import AggregationConsumer
 
 
 class TestBaseConsumer:
@@ -64,6 +65,36 @@ class TestEnrichmentConsumer:
         assert "device" in enriched["metadata"]
         assert "browser" in enriched["metadata"]
 
+    def test_enrichment_sends_to_dlq_on_error(self):
+        message = {}
+        self.consumer.process(message)
+        assert self.consumer._dlq.send.called
+
+
+class TestAggregationConsumer:
+    def setup_method(self):
+        self.consumer = AggregationConsumer()
+        self.consumer._redis = Mock()
+        self.consumer._window_service = Mock()
+        self.consumer._dlq = Mock()
+
+    def test_process_updates_window(self):
+        message = {
+            "id": "test-1",
+            "event_type": "transaction",
+            "source": "web",
+            "timestamp": "2024-01-15T12:00:00",
+            "data": {"amount": 100},
+            "metadata": {},
+        }
+        self.consumer.process(message)
+        self.consumer._window_service.update_window.assert_called_once()
+
+    def test_process_sends_to_dlq_on_error(self):
+        self.consumer._window_service.update_window.side_effect = Exception("test error")
+        self.consumer.process({"id": "bad-event", "event_type": "click", "source": "app"})
+        assert self.consumer._dlq.send.called
+
 
 class TestStorageConsumer:
     def setup_method(self):
@@ -105,6 +136,29 @@ class TestStorageConsumer:
         self.consumer.process(message)
 
         assert mock_db.add.called
+        assert mock_db.commit.called
+
+    @patch("consumers.storage_consumer.SessionLocal")
+    def test_stores_aggregate(self, mock_session_local):
+        mock_db = Mock()
+        mock_session_local.return_value = mock_db
+
+        message = {
+            "id": "agg-1",
+            "window_key": "transaction:60:1705315200",
+            "window_start": "2024-01-15T12:00:00",
+            "window_end": "2024-01-15T12:01:00",
+            "event_type": "transaction",
+            "count": 5,
+            "sum": 500.0,
+            "avg": 100.0,
+            "min": 50.0,
+            "max": 150.0,
+            "last_updated": "2024-01-15T12:00:30",
+        }
+        self.consumer.process(message)
+
+        assert mock_db.merge.called
         assert mock_db.commit.called
 
     @patch("consumers.storage_consumer.SessionLocal")

@@ -93,3 +93,18 @@ class TestQueryAPI:
             assert response.json()["detail"] == "Event not found"
         finally:
             app.dependency_overrides.clear()
+
+    def test_metrics_endpoint(self):
+        response = client.get("/metrics")
+        assert response.status_code == 200
+        # Prometheus metrics include python_info by default
+        body = response.text
+        assert "# HELP" in body
+        assert "# TYPE" in body
+
+
+class TestQueryAPIWebSocket:
+    def test_websocket_endpoint_exists(self):
+        """Verify the WebSocket route is registered."""
+        routes = [r.path for r in app.routes]
+        assert "/ws" in routes

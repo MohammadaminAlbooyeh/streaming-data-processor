@@ -64,3 +64,29 @@ class TestWindowing:
 
         assert agg.count == 1
         assert agg.sum == 0.0
+
+    def test_get_window_returns_aggregate(self):
+        data = {
+            "id": "agg-1",
+            "window_key": "click:60:1705315200",
+            "window_start": "2024-01-15T12:00:00",
+            "window_end": "2024-01-15T12:01:00",
+            "event_type": "click",
+            "count": 5,
+            "sum": 10.0,
+            "avg": 2.0,
+            "min": 1.0,
+            "max": 3.0,
+            "last_updated": "2024-01-15T12:00:30",
+        }
+        self.mock_redis.get.return_value = data
+
+        agg = self.service.get_window("click:60:1705315200")
+        assert agg is not None
+        assert agg.count == 5
+        assert agg.sum == 10.0
+
+    def test_get_window_returns_none_when_missing(self):
+        self.mock_redis.get.return_value = None
+        agg = self.service.get_window("nonexistent:60:0")
+        assert agg is None

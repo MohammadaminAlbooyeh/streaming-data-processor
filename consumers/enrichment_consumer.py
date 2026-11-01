@@ -1,4 +1,5 @@
 import random
+import logging
 
 from core.config import settings
 from core.kafka_client import KafkaClient
@@ -35,9 +36,10 @@ class EnrichmentConsumer(BaseConsumer):
                 value=enriched,
                 key=enriched.get("id"),
             )
-            print(f"EnrichmentConsumer: Enriched event {message.get('id')}")
+            self.logger.info("event_enriched", event_id=message.get("id"))
         except Exception as e:
             self._dlq.send(message, str(e))
+            self.logger.error("enrichment_failed", error=str(e), event_id=message.get("id"))
 
 
 if __name__ == "__main__":

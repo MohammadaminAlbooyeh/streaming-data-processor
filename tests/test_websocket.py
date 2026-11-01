@@ -1,7 +1,7 @@
 """Tests for the WebSocket EventStreamManager."""
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, patch
 
 from api.websocket import EventStreamManager
 
@@ -58,3 +58,24 @@ class TestEventStreamManagerAsync:
 
         assert ws1 in self.manager._connections
         assert ws2 not in self.manager._connections
+
+
+@pytest.mark.asyncio
+class TestWebSocketEndpoint:
+    async def test_websocket_endpoint_connect_disconnect(self):
+        from api.websocket import websocket_endpoint
+        from fastapi import WebSocket, WebSocketDisconnect
+
+        ws = AsyncMock(spec=WebSocket)
+        ws.receive_text.side_effect = WebSocketDisconnect()
+
+        await websocket_endpoint(ws)
+        ws.accept.assert_awaited_once()
+
+
+class TestKafkaEventForwarder:
+    @patch("api.websocket.KafkaClient")
+    def test_kafka_event_forwarder_not_imported_error(self, mock_kafka_cls):
+        """Verifies kafka_event_forwarder is defined and importable."""
+        from api.websocket import kafka_event_forwarder
+        assert callable(kafka_event_forwarder)

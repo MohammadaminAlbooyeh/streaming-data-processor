@@ -21,10 +21,10 @@ class AggregationConsumer(BaseConsumer):
         try:
             event = Event(**message)
             self._window_service.update_window(event)
-            print(f"AggregationConsumer: Updated window for event {event.id}")
+            self.logger.info("window_updated", event_id=event.id, event_type=event.event_type)
         except Exception as e:
             self._dlq.send(message, str(e))
-            print(f"AggregationConsumer: Sent to DLQ: {e}")
+            self.logger.error("dlq_sent", error=str(e), event_id=message.get("id"))
 
 
 if __name__ == "__main__":

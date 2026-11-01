@@ -1,14 +1,14 @@
 import signal
-import sys
 from abc import ABC, abstractmethod
 from typing import Callable, Optional
 
 from core.config import settings
 from core.dead_letter_handler import DeadLetterHandler
 from core.kafka_client import KafkaClient
+from core.logging import LoggingMixin
 
 
-class BaseConsumer(ABC):
+class BaseConsumer(ABC, LoggingMixin):
     def __init__(
         self,
         topic: str,
@@ -29,20 +29,26 @@ class BaseConsumer(ABC):
         ...
 
     def _signal_handler(self, signum, frame) -> None:
+        self.logger.info("shutdown_signal_received", signal=signum)
         self._running = False
 
     def run(self) -> None:
+        self.logger.info("starting_consumer", topic=self._topic, group_id=self._group_id)
         self._running = True
-        self._kafka.consume(
-            topic=self._topic,
-            group_id=self._group_id,
-            handler=self._handle_with_errors,
-        )
+        try:
+            self._kafka.consume(
+                topic=self._topic,
+                group_id=self._group_id,
+                handler=self._handle_with_errors,
+            )
+        finally:
+            self._kafka.close()
+            self.logger.info("consumer_stopped", topic=self._topic)
 
     def _handle_with_errors(self, message: dict) -> None:
         try:
             self.process(message)
         except Exception as e:
+            self.logger.error("message_processing_failed", error=str(e), message_id=message.get("id", "unknown"))
             if self._dlq:
                 self._dlq.send(message, str(e))
-            print(f"Error processing message {message.get('id', 'unknown')}: {e}", file=sys.stderr)

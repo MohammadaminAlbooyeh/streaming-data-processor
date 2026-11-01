@@ -71,3 +71,21 @@ class TestConfig:
         assert settings.redis_port == 6379
         assert settings.dedup_ttl_seconds == 3600
         assert settings.window_size_seconds == 60
+
+
+class TestDatabaseSession:
+    @patch("models.database.SessionLocal")
+    def test_get_db_yields_and_closes(self, mock_session_local):
+        mock_db = Mock()
+        mock_session_local.return_value = mock_db
+
+        from models.database import get_db
+
+        gen = get_db()
+        db = next(gen)
+        assert db == mock_db
+
+        with pytest.raises(StopIteration):
+            next(gen)
+
+        mock_db.close.assert_called_once()

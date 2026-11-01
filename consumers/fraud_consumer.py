@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from typing import List, Dict
+from typing import Dict, List
 
 from core.config import settings
 from core.kafka_client import KafkaClient
@@ -34,7 +34,7 @@ class FraudConsumer(BaseConsumer):
 
     def process(self, message: dict) -> None:
         event = Event(**message)
-        alerts = []
+        alerts: List[Dict] = []
 
         if rule := self._check_high_value(event):
             alerts.append(rule)
@@ -51,7 +51,7 @@ class FraudConsumer(BaseConsumer):
                 value=alert,
                 key=alert.get("id"),
             )
-            print(f"FraudConsumer: Alert triggered - {alert['rule']} for event {event.id}")
+            self.logger.info("fraud_alert_triggered", rule=alert["rule"], event_id=event.id, severity=alert["severity"])
 
     def _check_high_value(self, event: Event) -> Dict | None:
         value = event.data.get("amount", 0)

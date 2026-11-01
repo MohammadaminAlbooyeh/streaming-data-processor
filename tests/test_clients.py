@@ -137,3 +137,61 @@ class TestRedisClient:
         client = RedisClient(host="localhost", port=6379, db=0)
         result = client.incr("counter-key")
         assert result == 5
+
+    @patch("core.redis_client.sync_redis.Redis")
+    def test_delete(self, mock_redis):
+        mock_instance = Mock()
+        mock_redis.return_value = mock_instance
+        client = RedisClient(host="localhost", port=6379, db=0)
+        client.delete("test-key")
+        mock_instance.delete.assert_called_once_with("test-key")
+
+    @patch("core.redis_client.sync_redis.Redis")
+    def test_expire(self, mock_redis):
+        mock_instance = Mock()
+        mock_redis.return_value = mock_instance
+        client = RedisClient(host="localhost", port=6379, db=0)
+        client.expire("test-key", 60)
+        mock_instance.expire.assert_called_once_with("test-key", 60)
+
+    @patch("core.redis_client.sync_redis.Redis")
+    def test_close(self, mock_redis):
+        mock_instance = Mock()
+        mock_redis.return_value = mock_instance
+        client = RedisClient(host="localhost", port=6379, db=0)
+        client.close()
+        mock_instance.close.assert_called_once()
+
+
+class TestKafkaClientExtended:
+    @patch("core.kafka_client.KafkaProducer")
+    def test_flush(self, mock_kafka_producer):
+        mock_producer = Mock()
+        mock_kafka_producer.return_value = mock_producer
+        client = KafkaClient(bootstrap_servers="localhost:9092")
+        client._producer = mock_producer
+        client.flush()
+        mock_producer.flush.assert_called_once()
+
+    @patch("core.kafka_client.KafkaProducer")
+    def test_close_flushes_and_closes(self, mock_kafka_producer):
+        mock_producer = Mock()
+        mock_kafka_producer.return_value = mock_producer
+        client = KafkaClient(bootstrap_servers="localhost:9092")
+        client._producer = mock_producer
+        client.close()
+        mock_producer.flush.assert_called_once()
+        mock_producer.close.assert_called_once()
+
+    @patch("core.kafka_client.KafkaProducer")
+    def test_close_noop_when_no_producer(self, mock_kafka_producer):
+        client = KafkaClient(bootstrap_servers="localhost:9092")
+        client.close()  # should not raise
+
+    @patch("core.kafka_client.KafkaProducer")
+    def test_consume_multiple_empty_topics(self, mock_kafka_producer):
+        client = KafkaClient(bootstrap_servers="localhost:9092")
+        # Should not raise
+        with pytest.raises(Exception):
+            # Will fail because consumer needs at least one topic
+            client.consume_multiple([])

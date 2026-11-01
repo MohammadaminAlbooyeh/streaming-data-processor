@@ -1,4 +1,5 @@
 import json
+import time
 from typing import Callable, Optional
 from kafka import KafkaProducer, KafkaConsumer, errors
 
@@ -9,6 +10,8 @@ class KafkaClient:
     def __init__(self, bootstrap_servers: Optional[str] = None):
         self.bootstrap_servers = bootstrap_servers or settings.kafka_bootstrap_servers
         self._producer: Optional[KafkaProducer] = None
+        self._last_flush = time.time()
+        self._flush_interval = 0.1  # flush every 100ms
 
     @property
     def producer(self) -> KafkaProducer:
@@ -17,15 +20,27 @@ class KafkaClient:
                 bootstrap_servers=self.bootstrap_servers,
                 value_serializer=lambda v: json.dumps(v, default=str).encode("utf-8"),
                 key_serializer=lambda k: k.encode("utf-8") if k else None,
+                linger_ms=10,  # batch messages for 10ms
+                batch_size=16384,
+                buffer_memory=33554432,
             )
         return self._producer
 
     def produce(self, topic: str, value: dict, key: Optional[str] = None) -> None:
         try:
             self.producer.send(topic, value=value, key=key)
-            self.producer.flush()
+            # Periodic flush instead of per-message flush
+            now = time.time()
+            if now - self._last_flush > self._flush_interval:
+                self.producer.flush()
+                self._last_flush = now
         except errors.KafkaError as e:
             raise RuntimeError(f"Failed to produce message to {topic}: {e}") from e
+
+    def flush(self) -> None:
+        if self._producer is not None:
+            self.producer.flush()
+            self._last_flush = time.time()
 
     def consume(
         self,
@@ -88,5 +103,6 @@ class KafkaClient:
 
     def close(self) -> None:
         if self._producer is not None:
+            self._producer.flush()
             self._producer.close()
 
